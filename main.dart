@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:sqflite/sqflite.dart';
+import 'package:path/path.dart';
+import 'package:path_provider/path_provider.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized(); // Certifique-se de que o Flutter está inicializado.
+  await copyDatabase(); // Copie o banco de dados existente para o diretório de documentos.
   runApp(MyBooksApp());
 }
+
 
 class MyBooksApp extends StatelessWidget {
   @override
@@ -18,11 +24,52 @@ class MyBooksScreen extends StatefulWidget {
   _MyBooksScreenState createState() => _MyBooksScreenState();
 }
 
+class DatabaseHelper {
+  static final DatabaseHelper _instance = DatabaseHelper._internal();
+
+  factory DatabaseHelper() => _instance;
+
+  DatabaseHelper._internal();
+
+  late Database _database;
+
+  Future<void> initializeDatabase() async {
+  if (_database == null || !_database.isOpen) {
+    _database = await openDatabase(
+      join(await getDatabasesPath(), 'books.db'),
+      version: 1,
+    );
+  }
+}
+
+
+  Future<void> insertBook(String nome, String autor, String genero) async {
+    await _database.insert(
+      'registros',
+      {
+        'nome': nome,
+        'autor': autor,
+        'genero': genero,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getAllBooks() async {
+    return await _database.query('registros');
+  }
+}
+
+
+
 class _MyBooksScreenState extends State<MyBooksScreen> {
   final TextEditingController _nomeLivroController = TextEditingController();
   final TextEditingController _autorController = TextEditingController();
-  final TextEditingController _classificacaoController = TextEditingController();
+  final TextEditingController _generoController = TextEditingController();
   List<String> _historicoLivros = [];
+_MyBooksScreenState() {
+  DatabaseHelper().initializeDatabase();
+}
 
   @override
   Widget build(BuildContext context) {
@@ -52,8 +99,8 @@ class _MyBooksScreenState extends State<MyBooksScreen> {
             ),
             SizedBox(height: 16),
             TextFormField(
-              controller: _classificacaoController,
-              decoration: InputDecoration(labelText: "Classificação:"),
+              controller: _generoController,
+              decoration: InputDecoration(labelText: "Gênero:"),
             ),
             SizedBox(height: 16),
             ElevatedButton(
@@ -81,8 +128,11 @@ class _MyBooksScreenState extends State<MyBooksScreen> {
                 shrinkWrap: true,
                 itemCount: _historicoLivros.length,
                 itemBuilder: (context, index) {
+                  final livro = _historicoLivros[index];
+                  final parts = livro.split(' - ');
                   return ListTile(
-                    title: Text(_historicoLivros[index]),
+                    title: Text(parts[0]), // Nome do livro
+                    subtitle: Text('Autor: ${parts[1]}, Gênero: ${parts[2]}'), // Autor e Gênero
                   );
                 },
               ),
@@ -93,24 +143,45 @@ class _MyBooksScreenState extends State<MyBooksScreen> {
     );
   }
 
-  void _registrarLivro() {
-    final nomeLivro = _nomeLivroController.text;
-    final autor = _autorController.text;
-    final classificacao = _classificacaoController.text;
+void _registrarLivro() async {
+  final nomeLivro = _nomeLivroController.text;
+  final autor = _autorController.text;
+  final genero = _generoController.text;
 
-    // Valide se todos os campos estão preenchidos antes de adicionar ao histórico
-    if (nomeLivro.isNotEmpty && autor.isNotEmpty && classificacao.isNotEmpty) {
-      setState(() {
-        final livroRegistrado = "$nomeLivro - $autor - $classificacao";
-        _historicoLivros.add(livroRegistrado);
-        _limparCampos();
-      });
-    }
+  if (nomeLivro.isNotEmpty && autor.isNotEmpty && genero.isNotEmpty) {
+
+    await DatabaseHelper().insertBook(nomeLivro, autor, genero); // Insira o livro
+    setState(() {
+      _limparCampos();
+    });
   }
+}
+
 
   void _limparCampos() {
     _nomeLivroController.clear();
     _autorController.clear();
-    _classificacaoController.clear();
+    _generoController.clear();
   }
+
+Future<void> copyDatabase() async {
+  try {
+    // Obtenha o diretório de documentos do aplicativo.
+    final documentsDirectory = await getApplicationDocumentsDirectory();
+
+    // Caminho para o banco de dados no diretório de documentos.
+    final databasePath = join(documentsDirectory.path, 'books.db');
+
+    // Caminho para o seu banco de dados SQLite existente.
+    final sourceDatabasePath = 'file:///C:/sqlite3/books.bd;';
+
+    // Verifique se o arquivo de origem existe antes de copiar.
+    if (await File(sourceDatabasePath).exists()) {
+      await File(sourceDatabasePath).copy(databasePath);
+    }
+  } catch (e) {
+    print('Erro ao copiar o banco de dados: $e');
+   
+  }
+
 }
